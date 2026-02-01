@@ -1,0 +1,872 @@
+
+-- ================== SERVICES ==================
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local Player = LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Remotes = ReplicatedStorage:WaitForChild("Remotes")
+local RunService = game:GetService("RunService")
+local VIM = game:GetService("VirtualInputManager")
+
+-- ================== GLOBAL FLAG ==================
+_G.TUTORIAL_SCRIPT_RUNNING = true
+
+-- ================== SAFE REMOTE ==================
+local function safeFire(remote, ...)
+	local args = { ... }
+	local ok, err = pcall(function()
+		remote:FireServer(unpack(args))
+	end)
+	if ok then
+		print("✅ Fired:", remote.Name)
+	else
+		warn("❌ Fire failed:", remote.Name, err)
+	end
+end
+
+local function safeInvoke(remote, ...)
+	local args = { ... }
+	local ok, result = pcall(function()
+		return remote:InvokeServer(unpack(args))
+	end)
+	if ok then
+		print("✅ Invoke:", remote.Name, result)
+	else
+		warn("❌ Invoke failed:", remote.Name, result)
+	end
+	return result
+end
+
+-- ================================================================
+-- 🐉 ระบบมังกร (Dragon System)
+-- ================================================================
+local function setupDragonSystem()
+	print("🐉 ตั้งค่ามังกร...")
+	task.spawn(function()
+		pcall(function()
+			-- รอ Character
+			local char = Player.Character
+			if not char then
+				print("⏳ รอ Character...")
+				char = Player.CharacterAdded:Wait()
+				task.wait(2)
+			end
+
+			local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+			if not remotes then
+				warn("❌ ไม่พบ Remotes")
+				return
+			end
+
+			-- ฟังก์ชันเรียกมังกร
+			local function equipDragon()
+				local success = pcall(function()
+					print("📞 เรียกมังกร...")
+					local args = {"1"}
+					local equipRemote = remotes:FindFirstChild("EquipDragonRemote")
+					if equipRemote then
+						equipRemote:InvokeServer(unpack(args))
+						print("✅ เรียกมังกรสำเร็จ")
+						task.wait(1)
+						return true
+					else
+						warn("❌ ไม่พบ EquipDragonRemote")
+						return false
+					end
+				end)
+				return success
+			end
+
+			-- หา Dragon folder
+			local dragonFolder = nil
+			pcall(function()
+				dragonFolder = workspace:WaitForChild("Characters", 10)
+					:WaitForChild(Player.Name, 10)
+					:WaitForChild("Dragons", 10)
+			end)
+
+			if not dragonFolder then
+				warn("❌ ไม่พบ Dragons folder")
+				return
+			end
+
+			print("✅ พบ Dragons folder")
+
+			local function getAutoDragon()
+				local dragons = dragonFolder:GetChildren()
+				if #dragons > 0 then
+					return dragons[1]
+				end
+				return nil
+			end
+
+			local function reviveDragon(dragonModel)
+				pcall(function()
+					local dragonName = dragonModel.Name
+					local deadFlag = dragonModel:FindFirstChild("Data") and dragonModel.Data:FindFirstChild("Dead")
+					
+					if deadFlag and deadFlag.Value == true then
+						print("💀 ฟื้นมังกร:", dragonName)
+						local args = {
+							dragonName,
+							"DragonRevivalHeart"
+						}
+						local reviveRemote = remotes:FindFirstChild("ReviveDragonRemote")
+						if reviveRemote then
+							reviveRemote:InvokeServer(unpack(args))
+							task.wait(1)
+						end
+					end
+				end)
+			end
+
+			local function isMountedOnDragon()
+				local result = false
+				pcall(function()
+					local humanoid = char:FindFirstChildOfClass("Humanoid")
+					if humanoid and humanoid.SeatPart then
+						local seat = humanoid.SeatPart
+						local dragonModel = seat:FindFirstAncestorWhichIsA("Model")
+						if dragonModel and dragonModel:IsDescendantOf(dragonFolder) then
+							result = true
+						end
+					end
+				end)
+				return result
+			end
+
+			local function ensureMountedDragon()
+				pcall(function()
+					if isMountedOnDragon() then
+						return
+					end
+
+					print("⚠️ ไม่ได้ขี่มังกร!")
+
+					local dragonModel = getAutoDragon()
+					
+					if not dragonModel then
+						print("🔍 ไม่พบมังกร - เรียกมังกรออกมา")
+						equipDragon()
+						task.wait(2)
+						dragonModel = getAutoDragon()
+						
+						if not dragonModel then
+							warn("❌ ยังไม่พบมังกรหลังเรียก")
+							return
+						end
+					end
+
+					local targetName = dragonModel.Name
+					print("🐉 พบมังกร:", targetName)
+
+					reviveDragon(dragonModel)
+					task.wait(0.5)
+
+					local seat = dragonModel:FindFirstChildWhichIsA("Seat", true)
+					local humanoid = char:FindFirstChildOfClass("Humanoid")
+					
+					if seat and humanoid then
+						print("🪶 กำลังขี่มังกร...")
+						seat:Sit(humanoid)
+						task.wait(1)
+
+						pcall(function()
+							local flyBtn = Player.PlayerGui
+								:WaitForChild("HUDGui", 5)
+								.BottomFrame.CurrentDragonFrame
+								.DragonControlsFrame.Other:FindFirstChild("Fly")
+							
+							if flyBtn and flyBtn:FindFirstChild("MouseButton1Down") then
+								firesignal(flyBtn.MouseButton1Down)
+								print("🛫 บิน!")
+							end
+						end)
+					else
+						warn("❌ ไม่พบที่นั่งหรือ Humanoid")
+					end
+				end)
+			end
+
+			-- เช็คซ้ำทุก 3 วินาที
+			task.spawn(function()
+				while _G.TUTORIAL_SCRIPT_RUNNING do
+					task.wait(3)
+					pcall(ensureMountedDragon)
+				end
+			end)
+
+			Player.CharacterAdded:Connect(function(newChar)
+				task.wait(3)
+				char = newChar
+				pcall(ensureMountedDragon)
+			end)
+
+			print("✅ ระบบมังกรพร้อม")
+			
+			task.wait(2)
+			ensureMountedDragon()
+		end)
+	end)
+end
+
+-- ================================================================
+-- ⌨️ ระบบกด Q (Auto Fly Control)
+-- ================================================================
+local function setupAutoFlyControl()
+	print("⌨️ ตั้งค่าปุ่ม Q...")
+	
+	task.spawn(function()
+		pcall(function()
+			task.wait(2)
+			pcall(function()
+				local settings = Player:WaitForChild("Data", 10):WaitForChild("Settings", 10)
+				local flyControl = settings:FindFirstChild("FlyControlUseSpace")
+				if flyControl then
+					flyControl.Value = false
+					print("✅ FlyControlUseSpace = false")
+				end
+			end)
+			
+			local function pressQ()
+				pcall(function()
+					VIM:SendKeyEvent(true, Enum.KeyCode.Q, false, game)
+					task.wait(0.05)
+					VIM:SendKeyEvent(false, Enum.KeyCode.Q, false, game)
+				end)
+			end
+			
+			local function getDragonFlying()
+				local result = false
+				pcall(function()
+					local char = Player.Character
+					if not char then return end
+					
+					local dragons = char:FindFirstChild("Dragons")
+					if not dragons then return end
+					
+					for _, dragon in ipairs(dragons:GetChildren()) do
+						if dragon:IsA("Model") then
+							local data = dragon:FindFirstChild("Data")
+							if data then
+								local flying = data:FindFirstChild("Flying")
+								if flying then
+									result = flying.Value
+									return
+								end
+							end
+						end
+					end
+				end)
+				return result
+			end
+			
+			task.wait(3)
+			while _G.TUTORIAL_SCRIPT_RUNNING do
+				task.wait(0.5)
+				
+				local isFlying = getDragonFlying()
+				
+				if not isFlying then
+					print("⚠️ มังกรไม่บิน → Q")
+					pressQ()
+					task.wait(0.1)
+					pressQ()
+				end
+			end
+		end)
+	end)
+	
+	print("✅ ระบบ Q พร้อม")
+end
+
+-- ================== LOBBY QUEST FUNCTIONS ==================
+
+local currentWorldName = "Lobby"
+
+local function getMissionValue(missionName)
+	local ok, result = pcall(function()
+		return Player.Data.WorldMissions[currentWorldName].Missions[missionName].Progress.Value
+	end)
+	return ok and result or 0
+end
+
+local function isMissionDone(missionName, required)
+	return getMissionValue(missionName) >= required
+end
+
+local function isLobbyEggDone()
+	return isMissionDone("EggQuest", 1)
+end
+
+local function isRingDone()
+	return isMissionDone("RidingRing", 10)
+end
+
+-- 🥚 เควสไข่ Lobby
+local function findAnyLobbyEgg()
+	local folder = workspace:FindFirstChild("Interactions")
+		and workspace.Interactions:FindFirstChild("Nodes")
+		and workspace.Interactions.Nodes:FindFirstChild("Eggs")
+		and workspace.Interactions.Nodes.Eggs:FindFirstChild("ActiveNodes")
+
+	if not folder then
+		warn("❌ ไม่พบ ActiveNodes ของไข่")
+		return nil
+	end
+
+	for _, node in ipairs(folder:GetChildren()) do
+		local egg = node:FindFirstChild("EggModel")
+		if egg then
+			local harvested = node:FindFirstChild("Harvested") or egg:FindFirstChild("Harvested")
+			if not harvested or harvested.Value == false then
+				return egg, node
+			end
+		end
+	end
+
+	return nil
+end
+
+local function tpTo(pos)
+	local char = LocalPlayer.Character
+	if not char or not char.PrimaryPart then return end
+
+	for _, p in ipairs(char:GetDescendants()) do
+		if p:IsA("BasePart") then
+			p.CanCollide = false
+		end
+	end
+
+	char:PivotTo(CFrame.new(pos + Vector3.new(0, 3, 0)))
+	task.wait(0.2)
+
+	for _, p in ipairs(char:GetDescendants()) do
+		if p:IsA("BasePart") then
+			p.CanCollide = true
+		end
+	end
+end
+
+local function startLobbyEggQuest()
+	print("🥚 เริ่มเควสไข่ Lobby")
+
+	local egg, node = findAnyLobbyEgg()
+
+	if not egg then
+		warn("❌ ไม่พบไข่ Lobby")
+		return
+	end
+
+	print("✅ เจอไข่:", egg.Name)
+
+	if egg:IsA("Model") then
+		if egg.PrimaryPart then
+			tpTo(egg.PrimaryPart.Position)
+		else
+			local part = egg:FindFirstChildWhichIsA("BasePart")
+			if part then tpTo(part.Position) end
+		end
+	elseif egg:IsA("BasePart") then
+		tpTo(egg.Position)
+	end
+
+	task.wait(0.4)
+
+	local harvested = node:FindFirstChild("Harvested") or egg:FindFirstChild("Harvested")
+
+	if harvested then
+		harvested.Value = true
+		print("✨ เก็บไข่สำเร็จ!")
+	end
+
+	task.wait(0.5)
+end
+
+-- 🌀 เควสวงแหวน
+local TARGET_PROGRESS = 10
+
+local function isRidingMissionCompleted()
+	return getMissionValue("RidingRing") >= TARGET_PROGRESS
+end
+
+local function getPlayerRoot()
+	local char = LocalPlayer.Character
+	if not char then return nil end
+
+	local dragons = char:FindFirstChild("Dragons")
+	if dragons then
+		for _, d in ipairs(dragons:GetChildren()) do
+			if d:IsA("Model") and d:FindFirstChild("HumanoidRootPart") then
+				return d.HumanoidRootPart
+			end
+		end
+	end
+
+	return char:FindFirstChild("HumanoidRootPart")
+end
+
+local function getFlyingFolder()
+	local root = workspace:FindFirstChild("Interactions")
+	if not root then return nil end
+	root = root:FindFirstChild("RidingRings")
+	if not root then return nil end
+	return root:FindFirstChild("Flying")
+end
+
+local function getDynamicRing()
+	local folder = getFlyingFolder()
+	if not folder then return nil end
+
+	local currentProgress = getMissionValue("RidingRing")
+	local targetRingNumber = currentProgress + 1
+
+	for _, item in ipairs(folder:GetChildren()) do
+		local part = nil
+
+		if item:IsA("BasePart") then
+			part = item
+		elseif item:IsA("Model") then
+			part = item:FindFirstChildWhichIsA("BasePart")
+		end
+
+		if part then
+			local num = tonumber(part.Name) or tonumber(item.Name)
+			if num == targetRingNumber then
+				print("🎯 เจอวงที่ " .. targetRingNumber)
+				return part
+			end
+		end
+	end
+
+	local best = nil
+	local bestIndex = math.huge
+
+	for _, item in ipairs(folder:GetChildren()) do
+		local part = nil
+
+		if item:IsA("BasePart") then
+			part = item
+		elseif item:IsA("Model") then
+			part = item:FindFirstChildWhichIsA("BasePart")
+		end
+
+		if part then
+			local num = tonumber(part.Name) or tonumber(item.Name) or 999999
+			if num < bestIndex then
+				bestIndex = num
+				best = part
+			end
+		end
+	end
+
+	return best
+end
+
+local function flyToRing(hrp, ringPart, speed, maxTime)
+	if not hrp or not ringPart then return end
+	speed = speed or 10
+	maxTime = maxTime or 8
+
+	local startTime = tick()
+	local lastDist = math.huge
+
+	while true do
+		if not hrp.Parent then return end
+		if not ringPart.Parent then return end
+		if isRidingMissionCompleted() then return end
+
+		local target = ringPart.Position + Vector3.new(0, 3, 0)
+		local pos = hrp.Position
+		local dist = (target - pos).Magnitude
+
+		if dist <= 3 then
+			print("✅ ผ่านวง!")
+			return
+		end
+
+		if tick() - startTime > maxTime then
+			warn("⏱️ flyToRing timeout")
+			return
+		end
+
+		if dist > lastDist + 2 then
+			return
+		end
+		lastDist = dist
+
+		hrp.CFrame = CFrame.new(pos, target)
+		hrp.CFrame = hrp.CFrame + (target - pos).Unit * speed * 0.6
+
+		task.wait(0.03)
+	end
+end
+
+local noclipEnabled = false
+local noclipConnection = nil
+
+local function enableNoclip()
+	if noclipEnabled then return end
+	noclipEnabled = true
+
+	noclipConnection = RunService.Heartbeat:Connect(function()
+		if not noclipEnabled then return end
+		local char = LocalPlayer.Character
+		if char then
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = false
+				end
+			end
+		end
+	end)
+
+	print("🟣 Noclip → ON")
+end
+
+local function disableNoclip()
+	if not noclipEnabled then return end
+	noclipEnabled = false
+
+	if noclipConnection then
+		noclipConnection:Disconnect()
+		noclipConnection = nil
+	end
+
+	local char = LocalPlayer.Character
+	if char then
+		for _, p in ipairs(char:GetDescendants()) do
+			if p:IsA("BasePart") then
+				p.CanCollide = true
+			end
+		end
+	end
+
+	print("⚪ Noclip → OFF")
+end
+
+local function antiStuck()
+	task.spawn(function()
+		while not isRidingMissionCompleted() do
+			task.wait(math.random(2, 8))
+			VIM:SendKeyEvent(true, Enum.KeyCode.D, false, game)
+			task.wait(0.1)
+			VIM:SendKeyEvent(false, Enum.KeyCode.D, false, game)
+		end
+	end)
+end
+
+local function startRidingRingFly()
+	print("🌀 เริ่มเควสวงแหวน")
+
+	enableNoclip()
+	antiStuck()
+
+	local lastProgress = getMissionValue("RidingRing")
+	local stuckTime = tick()
+
+	while not isRidingMissionCompleted() do
+		local hrp = getPlayerRoot()
+		if not hrp then
+			warn("⚠️ HRP ไม่พบ")
+			task.wait(0.5)
+			continue
+		end
+
+		local ring = getDynamicRing()
+		if not ring then
+			warn("❌ ไม่พบวงแหวน")
+			task.wait(0.5)
+			continue
+		end
+
+		local currentProgress = getMissionValue("RidingRing")
+		print(("➡️ Ring: %s | %d/%d"):format(ring.Name, currentProgress, TARGET_PROGRESS))
+
+		flyToRing(hrp, ring, 10, 8)
+		
+		local newProgress = getMissionValue("RidingRing")
+		if newProgress > lastProgress then
+			lastProgress = newProgress
+			stuckTime = tick()
+			print("✅ ผ่านวงแล้ว! (" .. newProgress .. "/10)")
+		else
+			if tick() - stuckTime > 10 then
+				warn("⚠️ ไม่ผ่านวงนานเกินไป → ลองใหม่")
+				stuckTime = tick()
+			end
+		end
+
+		task.wait(0.2)
+	end
+
+	print("🎉 วงแหวนเสร็จสิ้น!")
+	disableNoclip()
+end
+
+local function completeLobbyQuests()
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	print("🏛️ เริ่มทำเควส LOBBY")
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	task.wait(3)
+
+	if not isLobbyEggDone() then
+		print("🥚 ทำเควสไข่...")
+		startLobbyEggQuest()
+
+		local timeout = tick() + 60
+		while not isLobbyEggDone() and tick() < timeout do
+			task.wait(2)
+		end
+
+		if isLobbyEggDone() then
+			print("✅ เควสไข่เสร็จ!")
+		else
+			warn("❌ Timeout เควสไข่")
+		end
+	else
+		print("✅ เควสไข่เสร็จแล้ว (ข้าม)")
+	end
+
+	task.wait(2)
+
+	if not isRingDone() then
+		print("🌀 ทำเควสวงแหวน...")
+		startRidingRingFly()
+
+		if isRingDone() then
+			print("✅ เควสวงแหวนเสร็จ!")
+		else
+			warn("❌ เควสวงแหวนไม่สำเร็จ")
+		end
+	else
+		print("✅ เควสวงแหวนเสร็จแล้ว (ข้าม)")
+	end
+
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	if isLobbyEggDone() and isRingDone() then
+		print("🎉 เควส LOBBY ทั้งหมดเสร็จสิ้น!")
+		return true
+	else
+		warn("⚠️ เควส LOBBY ยังไม่เสร็จครบ")
+		return false
+	end
+end
+
+-- ================== NEST CHECK + FIXSCRIPT ==================
+local function waitForNestOrFix(timeout)
+	timeout = timeout or 5
+	local start = tick()
+
+	print("🔍 กำลังตรวจหา workspace.Environment.Nest...")
+
+	while tick() - start < timeout do
+		local env = workspace:FindFirstChild("Environment")
+		if env and env:FindFirstChild("Nest") then
+			print("🪺 พบ workspace.Environment.Nest แล้ว ✅")
+			return env.Nest
+		end
+		task.wait(0.5)
+	end
+
+	warn("❌ ไม่พบ Nest ภายใน " .. timeout .. " วินาที")
+	
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	print("📋 เช็คเควส Lobby ก่อนรัน Fixscript")
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	local lobbyQuestsComplete = false
+	
+	if game.PlaceId == 3475397644 then
+		print("🏛️ อยู่ใน Lobby → เริ่มเช็คเควส")
+		
+		local eggDone = isLobbyEggDone()
+		local ringDone = isRingDone()
+		
+		print("📊 สถานะเควส:")
+		print("   🥚 Egg: " .. (eggDone and "✅ เสร็จ" or "❌ ยังไม่เสร็จ"))
+		print("   🌀 Ring: " .. (ringDone and "✅ เสร็จ" or "❌ ยังไม่เสร็จ"))
+		
+		if eggDone and ringDone then
+			print("✅ เควส Lobby ครบแล้ว → ข้ามไปรัน Fixscript")
+			lobbyQuestsComplete = true
+		else
+			print("⚠️ เควส Lobby ยังไม่ครบ → ทำให้เสร็จก่อน")
+			lobbyQuestsComplete = completeLobbyQuests()
+		end
+	else
+		warn("⚠️ ไม่ได้อยู่ใน Lobby → ข้ามการเช็คเควส")
+		lobbyQuestsComplete = true
+	end
+	
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	if lobbyQuestsComplete then
+		warn("🔧 รัน Fixscript...")
+		
+		local fixSuccess = pcall(function()
+			loadstring(game:HttpGet(
+				"https://raw.githubusercontent.com/patriacktokyoboy69-ops/sfafwafwaf/refs/heads/main/awdwad"
+			))()
+		end)
+		
+		if fixSuccess then
+			print("✅ รัน Fixscript สำเร็จ")
+			task.wait(5)
+			
+			local env = workspace:FindFirstChild("Environment")
+			if env and env:FindFirstChild("Nest") then
+				print("🪺 พบ Nest หลังรัน Fixscript ✅")
+				return env.Nest
+			end
+		else
+			warn("❌ รัน Fixscript ล้มเหลว")
+		end
+	else
+		warn("❌ เควส Lobby ไม่สำเร็จ → ไม่รัน Fixscript")
+	end
+
+	return nil
+end
+
+-- ================== INCUBATOR ==================
+local function getPlayerIncubator()
+	local plots = workspace:WaitForChild("Interactions")
+		:WaitForChild("Plots")
+		:WaitForChild("Plots")
+
+	local plot = plots:FindFirstChild(LocalPlayer.Name .. "_Plot")
+	if not plot then return end
+
+	local base = plot:FindFirstChild("Base")
+	local buildings = base and base:FindFirstChild("Buildings")
+	return buildings and buildings:FindFirstChild("Incubator")
+end
+
+-- ================== TUTORIAL FUNCTIONS ==================
+local function completeEggTutorial()
+	safeFire(Remotes.PostTutorialStageRemote, "InteractWithEgg")
+	safeInvoke(Remotes.ReplicateItemRemote, {Name="Tutorial",Category="Eggs"}, "Model")
+	safeFire(Remotes.PostTutorialStageRemote, "CompleteEggNestInteraction")
+	safeInvoke(Remotes.SetTutorialStageRemote, "HatchingEggs")
+end
+
+local function completeIncubatorTutorial()
+	local incubator = getPlayerIncubator()
+	if not incubator then return end
+
+	safeFire(Remotes.PostTutorialStageRemote, "InteractWithIncubator")
+	safeInvoke(incubator.IncubateRemote, "Tutorial")
+	safeFire(Remotes.PostTutorialStageRemote, "PlaceEggInIncubator")
+	safeInvoke(incubator.ClaimRemote)
+	safeFire(Remotes.PostTutorialStageRemote, "ClaimEgg")
+	safeInvoke(Remotes.SetTutorialStageRemote, "GrowingDragon")
+end
+
+local function completeGrowDragonTutorial()
+	safeFire(Remotes.PostTutorialStageRemote, "OpenInteractMenuWithDragon")
+	safeInvoke(Remotes.GrowDragonRemote, "1")
+	safeFire(Remotes.PostTutorialStageRemote, "GrowDragon")
+	safeFire(Remotes.PostTutorialStageRemote, "RideDragon")
+	safeInvoke(Remotes.SetTutorialStageRemote, "SkillsIntroduction")
+	safeInvoke(Remotes.EquipDragonRemote, "1")
+end
+
+local function completeFlyingTutorialStage()
+	local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+	local dragons = char:WaitForChild("Dragons", 5)
+	if not dragons then return end
+
+	local dragon = dragons:FindFirstChild("1")
+	if not dragon then return end
+
+	safeFire(dragon.Remotes.FlyingRemote, true)
+	safeFire(Remotes.PostTutorialStageRemote, "FlyDragon")
+
+	for i = 1,3 do
+		safeFire(Remotes.RidingRingTouchedRemote, "Tutorial")
+		safeFire(Remotes.PostTutorialStageRemote, "FlyThroughRing"..i)
+	end
+
+	safeFire(Remotes.PostTutorialStageRemote, "GotCloseToTarget")
+	safeFire(Remotes.PostTutorialStageRemote, "StartedFireBreath")
+	safeFire(Remotes.PostTutorialStageRemote, "DestroyTarget1")
+	safeFire(Remotes.PostTutorialStageRemote, "DestroyTarget2")
+	safeFire(Remotes.PostTutorialStageRemote, "DestroyTarget3")
+
+	safeFire(Remotes.PoppedDiscoverIndicatorRemote, "EggNest", "Tutorial")
+	safeFire(Remotes.PostTutorialStageRemote, "InteractWithEgg2")
+	safeFire(Remotes.PostTutorialStageRemote, "CompleteEggNestInteraction2")
+	safeInvoke(Remotes.SetTutorialStageRemote, "NextWorld")
+end
+
+local function completeSecondIncubatorTutorial()
+	local incubator = getPlayerIncubator()
+	if not incubator then return end
+
+	safeFire(Remotes.PostTutorialStageRemote, "InteractWithIncubator2")
+	safeInvoke(incubator.IncubateRemote, "TutorialCompleteEgg")
+	safeFire(Remotes.PostTutorialStageRemote, "PlaceEggInIncubator2")
+	safeInvoke(incubator.ClaimRemote)
+	safeFire(Remotes.PostTutorialStageRemote, "ClaimEgg2")
+	safeInvoke(Remotes.SetTutorialStageRemote, "Complete")
+end
+
+-- ================== START FLOW ==================
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("🚀 เริ่มต้นระบบ Tutorial Complete")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+-- 🐉 เริ่มระบบมังกร
+setupDragonSystem()
+
+-- ⌨️ เริ่มระบบกด Q
+setupAutoFlyControl()
+
+print("⏳ รอระบบโหลด 3 วิ...")
+task.wait(3)
+
+-- เริ่ม Tutorial Flow
+local nest = waitForNestOrFix(5)
+
+if not nest then
+	warn("⛔ ไม่พบ Nest แม้หลังทำเควส Lobby และรัน Fixscript")
+	warn("🔄 กรุณาตรวจสอบและรีจอยน์")
+	_G.TUTORIAL_SCRIPT_RUNNING = false
+	return
+end
+
+print("✅ พบ Nest → เริ่มทำ Tutorial")
+
+for i = 1, 5 do
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	print("🔁 รอบที่", i)
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	completeEggTutorial()
+	task.wait(0.1)
+	completeIncubatorTutorial()
+	task.wait(0.1)
+	completeGrowDragonTutorial()
+	task.wait(0.1)
+	completeFlyingTutorialStage()
+	task.wait(0.1)
+	completeSecondIncubatorTutorial()
+	task.wait(0.1)
+end
+
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("✅ Tutorial เสร็จสมบูรณ์!")
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+-- วาร์ปกลับ Lobby
+print("🌍 วาร์ปไป Lobby...")
+task.wait(3)
+safeInvoke(Remotes.WorldTeleportRemote, 3475397644, {})
+
+-- ปิดระบบ
+task.wait(5)
+_G.TUTORIAL_SCRIPT_RUNNING = false
+print("🛑 ระบบหยุดทำงาน")
