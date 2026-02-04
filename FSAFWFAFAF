@@ -1,4 +1,3 @@
-
 -- ================== SERVICES ==================
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -22,6 +21,7 @@ local function safeFire(remote, ...)
 	else
 		warn("❌ Fire failed:", remote.Name, err)
 	end
+	return ok
 end
 
 local function safeInvoke(remote, ...)
@@ -34,14 +34,109 @@ local function safeInvoke(remote, ...)
 	else
 		warn("❌ Invoke failed:", remote.Name, result)
 	end
-	return result
+	return ok, result
+end
+
+-- ================================================================
+-- 🔍 ระบบตรวจสอบ Nest
+-- ================================================================
+local function checkNestExists()
+	local success, result = pcall(function()
+		local env = workspace:FindFirstChild("Environment")
+		if not env then 
+			return false, "ไม่พบ workspace.Environment"
+		end
+		
+		local nest = env:FindFirstChild("Nest")
+		if not nest then 
+			return false, "ไม่พบ workspace.Environment.Nest"
+		end
+		
+		return true, "พบ Nest แล้ว"
+	end)
+	
+	if success then
+		return result
+	else
+		return false, "Error checking Nest: " .. tostring(result)
+	end
+end
+
+local function waitForNestWithTimeout(timeout)
+	timeout = timeout or 5
+	local start = tick()
+	
+	print("🔍 รอการโหลด workspace.Environment.Nest...")
+	
+	while tick() - start < timeout do
+		local exists, msg = checkNestExists()
+		if exists then
+			print("✅ " .. msg)
+			return workspace.Environment.Nest
+		end
+		task.wait(0.3)
+	end
+	
+	warn("❌ Timeout: ไม่พบ Nest ภายใน " .. timeout .. " วินาที")
+	return nil
+end
+
+-- ================================================================
+-- 📊 ระบบตรวจสอบเควส Lobby
+-- ================================================================
+local currentWorldName = "Lobby"
+
+local function getMissionValue(missionName)
+	local ok, result = pcall(function()
+		return Player.Data.WorldMissions[currentWorldName].Missions[missionName].Progress.Value
+	end)
+	return ok and result or 0
+end
+
+local function isMissionDone(missionName, required)
+	local current = getMissionValue(missionName)
+	local done = current >= required
+	print(("📊 Mission: %s → %d/%d %s"):format(
+		missionName, 
+		current, 
+		required, 
+		done and "✅" or "❌"
+	))
+	return done
+end
+
+local function isLobbyEggDone()
+	return isMissionDone("EggQuest", 1)
+end
+
+local function isRingDone()
+	return isMissionDone("RidingRing", 10)
+end
+
+local function checkAllLobbyQuests()
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	print("📋 ตรวจสอบสถานะเควส Lobby")
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	local eggDone = isLobbyEggDone()
+	local ringDone = isRingDone()
+	
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	if eggDone and ringDone then
+		print("✅ เควส Lobby ครบทั้งหมด")
+		return true
+	else
+		print("⚠️ เควส Lobby ยังไม่ครบ")
+		return false
+	end
 end
 
 -- ================================================================
 -- 🐉 ระบบมังกร (Dragon System)
 -- ================================================================
 local function setupDragonSystem()
-	print("🐉 ตั้งค่ามังกร...")
+	print("🐉 ตั้งค่าระบบมังกร...")
 	task.spawn(function()
 		pcall(function()
 			-- รอ Character
@@ -280,30 +375,9 @@ local function setupAutoFlyControl()
 	print("✅ ระบบ Q พร้อม")
 end
 
--- ================== LOBBY QUEST FUNCTIONS ==================
-
-local currentWorldName = "Lobby"
-
-local function getMissionValue(missionName)
-	local ok, result = pcall(function()
-		return Player.Data.WorldMissions[currentWorldName].Missions[missionName].Progress.Value
-	end)
-	return ok and result or 0
-end
-
-local function isMissionDone(missionName, required)
-	return getMissionValue(missionName) >= required
-end
-
-local function isLobbyEggDone()
-	return isMissionDone("EggQuest", 1)
-end
-
-local function isRingDone()
-	return isMissionDone("RidingRing", 10)
-end
-
+-- ================================================================
 -- 🥚 เควสไข่ Lobby
+-- ================================================================
 local function findAnyLobbyEgg()
 	local folder = workspace:FindFirstChild("Interactions")
 		and workspace.Interactions:FindFirstChild("Nodes")
@@ -355,7 +429,7 @@ local function startLobbyEggQuest()
 
 	if not egg then
 		warn("❌ ไม่พบไข่ Lobby")
-		return
+		return false
 	end
 
 	print("✅ เจอไข่:", egg.Name)
@@ -378,12 +452,16 @@ local function startLobbyEggQuest()
 	if harvested then
 		harvested.Value = true
 		print("✨ เก็บไข่สำเร็จ!")
+		return true
 	end
 
 	task.wait(0.5)
+	return false
 end
 
+-- ================================================================
 -- 🌀 เควสวงแหวน
+-- ================================================================
 local TARGET_PROGRESS = 10
 
 local function isRidingMissionCompleted()
@@ -602,8 +680,12 @@ local function startRidingRingFly()
 
 	print("🎉 วงแหวนเสร็จสิ้น!")
 	disableNoclip()
+	return true
 end
 
+-- ================================================================
+-- 🎯 ทำเควส Lobby ทั้งหมด
+-- ================================================================
 local function completeLobbyQuests()
 	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	print("🏛️ เริ่มทำเควส LOBBY")
@@ -611,9 +693,10 @@ local function completeLobbyQuests()
 
 	task.wait(3)
 
+	-- เควสไข่
 	if not isLobbyEggDone() then
 		print("🥚 ทำเควสไข่...")
-		startLobbyEggQuest()
+		local eggSuccess = startLobbyEggQuest()
 
 		local timeout = tick() + 60
 		while not isLobbyEggDone() and tick() < timeout do
@@ -624,6 +707,7 @@ local function completeLobbyQuests()
 			print("✅ เควสไข่เสร็จ!")
 		else
 			warn("❌ Timeout เควสไข่")
+			return false
 		end
 	else
 		print("✅ เควสไข่เสร็จแล้ว (ข้าม)")
@@ -631,14 +715,16 @@ local function completeLobbyQuests()
 
 	task.wait(2)
 
+	-- เควสวงแหวน
 	if not isRingDone() then
 		print("🌀 ทำเควสวงแหวน...")
-		startRidingRingFly()
+		local ringSuccess = startRidingRingFly()
 
 		if isRingDone() then
 			print("✅ เควสวงแหวนเสร็จ!")
 		else
 			warn("❌ เควสวงแหวนไม่สำเร็จ")
+			return false
 		end
 	else
 		print("✅ เควสวงแหวนเสร็จแล้ว (ข้าม)")
@@ -646,92 +732,93 @@ local function completeLobbyQuests()
 
 	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	
-	if isLobbyEggDone() and isRingDone() then
+	-- ตรวจสอบอีกครั้งว่าครบจริง
+	local finalCheck = checkAllLobbyQuests()
+	
+	if finalCheck then
 		print("🎉 เควส LOBBY ทั้งหมดเสร็จสิ้น!")
 		return true
 	else
-		warn("⚠️ เควส LOBBY ยังไม่เสร็จครบ")
+		warn("⚠️ เควส Lobby ยังไม่เสร็จครบ")
 		return false
 	end
 end
 
--- ================== NEST CHECK + FIXSCRIPT ==================
-local function waitForNestOrFix(timeout)
-	timeout = timeout or 5
-	local start = tick()
-
-	print("🔍 กำลังตรวจหา workspace.Environment.Nest...")
-
-	while tick() - start < timeout do
-		local env = workspace:FindFirstChild("Environment")
-		if env and env:FindFirstChild("Nest") then
-			print("🪺 พบ workspace.Environment.Nest แล้ว ✅")
-			return env.Nest
-		end
-		task.wait(0.5)
-	end
-
-	warn("❌ ไม่พบ Nest ภายใน " .. timeout .. " วินาที")
-	
+-- ================================================================
+-- 🔧 รัน Fixscript
+-- ================================================================
+local function runFixscript()
 	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	print("📋 เช็คเควส Lobby ก่อนรัน Fixscript")
+	print("🔧 กำลังรัน Fixscript...")
 	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	
-	local lobbyQuestsComplete = false
+	local fixSuccess, fixError = pcall(function()
+		loadstring(game:HttpGet(
+			"https://raw.githubusercontent.com/patriacktokyoboy69-ops/sfafwafwaf/refs/heads/main/awdwad"
+		))()
+	end)
 	
-	if game.PlaceId == 3475397644 then
-		print("🏛️ อยู่ใน Lobby → เริ่มเช็คเควส")
-		
-		local eggDone = isLobbyEggDone()
-		local ringDone = isRingDone()
-		
-		print("📊 สถานะเควส:")
-		print("   🥚 Egg: " .. (eggDone and "✅ เสร็จ" or "❌ ยังไม่เสร็จ"))
-		print("   🌀 Ring: " .. (ringDone and "✅ เสร็จ" or "❌ ยังไม่เสร็จ"))
-		
-		if eggDone and ringDone then
-			print("✅ เควส Lobby ครบแล้ว → ข้ามไปรัน Fixscript")
-			lobbyQuestsComplete = true
-		else
-			print("⚠️ เควส Lobby ยังไม่ครบ → ทำให้เสร็จก่อน")
-			lobbyQuestsComplete = completeLobbyQuests()
-		end
+	if fixSuccess then
+		print("✅ รัน Fixscript สำเร็จ")
+		return true
 	else
-		warn("⚠️ ไม่ได้อยู่ใน Lobby → ข้ามการเช็คเควส")
-		lobbyQuestsComplete = true
+		warn("❌ รัน Fixscript ล้มเหลว:", fixError)
+		return false
 	end
-	
-	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	
-	if lobbyQuestsComplete then
-		warn("🔧 รัน Fixscript...")
-		
-		local fixSuccess = pcall(function()
-			loadstring(game:HttpGet(
-				"https://raw.githubusercontent.com/patriacktokyoboy69-ops/sfafwafwaf/refs/heads/main/awdwad"
-			))()
-		end)
-		
-		if fixSuccess then
-			print("✅ รัน Fixscript สำเร็จ")
-			task.wait(5)
-			
-			local env = workspace:FindFirstChild("Environment")
-			if env and env:FindFirstChild("Nest") then
-				print("🪺 พบ Nest หลังรัน Fixscript ✅")
-				return env.Nest
-			end
-		else
-			warn("❌ รัน Fixscript ล้มเหลว")
-		end
-	else
-		warn("❌ เควส Lobby ไม่สำเร็จ → ไม่รัน Fixscript")
-	end
-
-	return nil
 end
 
--- ================== INCUBATOR ==================
+-- ================================================================
+-- 🎯 ระบบตัดสินใจหลัก
+-- ================================================================
+local function determineNextAction()
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	print("🔍 ระบบตรวจสอบอัจฉริยะ")
+	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	
+	-- 1. ตรวจสอบ Nest ก่อน
+	print("📍 ขั้นที่ 1: ตรวจสอบ workspace.Environment.Nest")
+	local nestExists, nestMsg = checkNestExists()
+	
+	if nestExists then
+		print("✅ พบ Nest → ดำเนินการ Tutorial ปกติ")
+		return "TUTORIAL", workspace.Environment.Nest
+	end
+	
+	print("⚠️ ไม่พบ Nest")
+	print("")
+	
+	-- 2. ตรวจสอบว่าอยู่ใน Lobby หรือไม่
+	print("📍 ขั้นที่ 2: ตรวจสอบ PlaceId")
+	local currentPlaceId = game.PlaceId
+	print("   PlaceId ปัจจุบัน:", currentPlaceId)
+	
+	if currentPlaceId ~= 3475397644 then
+		warn("❌ ไม่ได้อยู่ใน Lobby (PlaceId: " .. currentPlaceId .. ")")
+		warn("⚠️ ไม่สามารถทำเควส Lobby ได้")
+		return "ERROR", nil
+	end
+	
+	print("✅ อยู่ใน Lobby")
+	print("")
+	
+	-- 3. ตรวจสอบสถานะเควส
+	print("📍 ขั้นที่ 3: ตรวจสอบสถานะเควส Lobby")
+	local questsComplete = checkAllLobbyQuests()
+	print("")
+	
+	-- 4. ตัดสินใจ
+	if questsComplete then
+		print("📍 ขั้นที่ 4: เควสครบ → รัน Fixscript")
+		return "FIXSCRIPT", nil
+	else
+		print("📍 ขั้นที่ 4: เควสไม่ครบ → ทำเควสให้เสร็จ")
+		return "QUESTS", nil
+	end
+end
+
+-- ================================================================
+-- 📋 INCUBATOR & TUTORIAL FUNCTIONS
+-- ================================================================
 local function getPlayerIncubator()
 	local plots = workspace:WaitForChild("Interactions")
 		:WaitForChild("Plots")
@@ -745,7 +832,6 @@ local function getPlayerIncubator()
 	return buildings and buildings:FindFirstChild("Incubator")
 end
 
--- ================== TUTORIAL FUNCTIONS ==================
 local function completeEggTutorial()
 	safeFire(Remotes.PostTutorialStageRemote, "InteractWithEgg")
 	safeInvoke(Remotes.ReplicateItemRemote, {Name="Tutorial",Category="Eggs"}, "Model")
@@ -814,57 +900,152 @@ local function completeSecondIncubatorTutorial()
 	safeInvoke(Remotes.SetTutorialStageRemote, "Complete")
 end
 
--- ================== START FLOW ==================
+-- ================================================================
+-- 🚀 MAIN EXECUTION
+-- ================================================================
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("🚀 เริ่มต้นระบบ Tutorial Complete")
+print("🚀 Tutorial Complete System v2.0")
 print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
--- 🐉 เริ่มระบบมังกร
+-- เริ่มระบบพื้นฐาน
 setupDragonSystem()
-
--- ⌨️ เริ่มระบบกด Q
 setupAutoFlyControl()
 
 print("⏳ รอระบบโหลด 3 วิ...")
 task.wait(3)
 
--- เริ่ม Tutorial Flow
-local nest = waitForNestOrFix(5)
+-- ตัดสินใจว่าจะทำอะไรต่อ
+local action, data = determineNextAction()
 
-if not nest then
-	warn("⛔ ไม่พบ Nest แม้หลังทำเควส Lobby และรัน Fixscript")
-	warn("🔄 กรุณาตรวจสอบและรีจอยน์")
-	_G.TUTORIAL_SCRIPT_RUNNING = false
-	return
-end
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+print("🎯 การดำเนินการ:", action)
+print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-print("✅ พบ Nest → เริ่มทำ Tutorial")
-
-for i = 1, 5 do
+if action == "TUTORIAL" then
+	-- มี Nest แล้ว → ทำ Tutorial ปกติ
+	print("✅ พบ Nest → ดำเนินการ Tutorial")
+	
+	for i = 1, 5 do
+		print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		print("🔁 รอบที่", i)
+		print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		
+		completeEggTutorial()
+		task.wait(0.1)
+		completeIncubatorTutorial()
+		task.wait(0.1)
+		completeGrowDragonTutorial()
+		task.wait(0.1)
+		completeFlyingTutorialStage()
+		task.wait(0.1)
+		completeSecondIncubatorTutorial()
+		task.wait(0.1)
+	end
+	
 	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	print("🔁 รอบที่", i)
+	print("✅ Tutorial เสร็จสมบูรณ์!")
 	print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	
-	completeEggTutorial()
-	task.wait(0.1)
-	completeIncubatorTutorial()
-	task.wait(0.1)
-	completeGrowDragonTutorial()
-	task.wait(0.1)
-	completeFlyingTutorialStage()
-	task.wait(0.1)
-	completeSecondIncubatorTutorial()
-	task.wait(0.1)
+	-- วาร์ปกลับ Lobby
+	print("🌍 วาร์ปไป Lobby...")
+	task.wait(3)
+	safeInvoke(Remotes.WorldTeleportRemote, 3475397644, {})
+	
+elseif action == "QUESTS" then
+	-- ทำเควสให้เสร็จก่อน
+	print("🎯 ทำเควส Lobby ให้เสร็จ")
+	local questSuccess = completeLobbyQuests()
+	
+	if questSuccess then
+		print("✅ เควสเสร็จ → ลองรัน Fixscript")
+		
+		if runFixscript() then
+			task.wait(5)
+			
+			-- ตรวจสอบ Nest อีกครั้ง
+			local nest = waitForNestWithTimeout(10)
+			
+			if nest then
+				print("✅ พบ Nest หลัง Fixscript → เริ่ม Tutorial")
+				
+				for i = 1, 5 do
+					print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+					print("🔁 รอบที่", i)
+					print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+					
+					completeEggTutorial()
+					task.wait(0.1)
+					completeIncubatorTutorial()
+					task.wait(0.1)
+					completeGrowDragonTutorial()
+					task.wait(0.1)
+					completeFlyingTutorialStage()
+					task.wait(0.1)
+					completeSecondIncubatorTutorial()
+					task.wait(0.1)
+				end
+				
+				print("✅ Tutorial เสร็จสมบูรณ์!")
+				
+				print("🌍 วาร์ปไป Lobby...")
+				task.wait(3)
+				safeInvoke(Remotes.WorldTeleportRemote, 3475397644, {})
+			else
+				warn("❌ ยังไม่พบ Nest หลัง Fixscript")
+				warn("🔄 กรุณารีจอยน์เกม")
+			end
+		else
+			warn("❌ Fixscript ล้มเหลว")
+		end
+	else
+		warn("❌ ทำเควสไม่สำเร็จ")
+	end
+	
+elseif action == "FIXSCRIPT" then
+	-- เควสครบแล้ว → รัน Fixscript ทันที
+	print("✅ เควสครบ → รัน Fixscript ทันที")
+	
+	if runFixscript() then
+		task.wait(5)
+		
+		local nest = waitForNestWithTimeout(10)
+		
+		if nest then
+			print("✅ พบ Nest → เริ่ม Tutorial")
+			
+			for i = 1, 5 do
+				print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+				print("🔁 รอบที่", i)
+				print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+				
+				completeEggTutorial()
+				task.wait(0.1)
+				completeIncubatorTutorial()
+				task.wait(0.1)
+				completeGrowDragonTutorial()
+				task.wait(0.1)
+				completeFlyingTutorialStage()
+				task.wait(0.1)
+				completeSecondIncubatorTutorial()
+				task.wait(0.1)
+			end
+			
+			print("✅ Tutorial เสร็จสมบูรณ์!")
+			
+			print("🌍 วาร์ปไป Lobby...")
+			task.wait(3)
+			safeInvoke(Remotes.WorldTeleportRemote, 3475397644, {})
+		else
+			warn("❌ ไม่พบ Nest หลัง Fixscript")
+			warn("🔄 กรุณารีจอยน์เกม")
+		end
+	end
+	
+else
+	-- ERROR
+	warn("❌ เกิดข้อผิดพลาด - ไม่สามารถดำเนินการต่อได้")
+	warn("🔄 กรุณาตรวจสอบและรีจอยน์เกม")
 end
-
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-print("✅ Tutorial เสร็จสมบูรณ์!")
-print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
--- วาร์ปกลับ Lobby
-print("🌍 วาร์ปไป Lobby...")
-task.wait(3)
-safeInvoke(Remotes.WorldTeleportRemote, 3475397644, {})
 
 -- ปิดระบบ
 task.wait(5)
